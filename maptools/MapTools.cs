@@ -20,14 +20,16 @@ using System.Linq;
 
 namespace PRoConEvents
 {
-    public class CMapTools : PRoConPluginAPI, IPRoConPluginInterface
+    public class MapTools : PRoConPluginAPI, IPRoConPluginInterface
     {
+
         // Procon Variables
-        bool m_isPluginEnabled;
+        bool isPluginEnabled;
         private List<string> modeSettingsVar = new List<string>();
         private List<string> overrideSettingsVar = new List<string>();
+        private List<string> modeDescriptionsVar = new List<string>();
         private bool presetsEnabled;
-        private bool descsEnabled;
+        // private bool descsEnabled;
         // Gamemode settings + descriptions
         private Dictionary<string, GameSettings> modeSettings = new Dictionary<string, GameSettings>();
         private Dictionary<string, Dictionary<string, GameSettings>> overrideSettings = new Dictionary<string, Dictionary<string, GameSettings>>();
@@ -35,27 +37,28 @@ namespace PRoConEvents
         // Timers
         private static System.Timers.Timer applySettingsTimer;
         private static System.Timers.Timer refreshIndicesTimer;
-        private static System.Timers.Timer giveTutorialTimer;
+        // private static System.Timers.Timer giveTutorialTimer;
         // Map Info
         private List<MaplistEntry> currMapList;
         private string currMap;
         private string currMode;
         private string nextMap;
         private string nextMode;
+        private string nextMapDisp;
+        private string nextModeDisp;
+
         private struct GameSettings
         {
             public bool VehicleSpawns;
             public int GameTimeLimit;
             public int GameModeCounter;
-            public List<KeyValuePair<string, string>> CustomCommands;
         }
 
-        public CMapTools()
+        public MapTools()
         {
-
-            this.m_isPluginEnabled = false;
+            isPluginEnabled = false;
         }
-
+        #region Plugin Info
         public string GetPluginName()
         {
             return "MapTools";
@@ -78,36 +81,44 @@ namespace PRoConEvents
 
         public string GetPluginDescription()
         {
+            // I need to actually do this.
+            // I'm not actually gonna do this.
             return @"";
         }
-
+        #endregion
+        #region Procon Events
         public void OnPluginLoaded(string strHostName, string strPort, string strPRoConVersion)
         {
-
             this.RegisterEvents(this.GetType().Name, "OnRoundOver", "OnMaplistGetMapIndices", "OnMaplistList", "OnLevelLoaded");
+            rconCommand("mapList.list");
+            rconCommand("mapList.getMapIndices");
         }
 
         public void OnPluginEnable()
         {
             this.sayConsole("^bMapTools ^2Enabled!");
 
-            this.m_isPluginEnabled = true;
+            this.isPluginEnabled = true;
         }
 
         public void OnPluginDisable()
         {
             this.sayConsole("^bMapTools ^1Disabled!");
             applySettingsTimer.Enabled = false;
-            this.m_isPluginEnabled = false;
+            this.isPluginEnabled = false;
         }
-
+        #endregion
+        #region Variables
         public List<CPluginVariable> GetDisplayPluginVariables()
         {
             List<CPluginVariable> lstReturn = new List<CPluginVariable>();
             lstReturn.Add(new CPluginVariable("Map/Mode Presets|Presets Enabled", typeof(bool), this.presetsEnabled));
             lstReturn.Add(new CPluginVariable("Map/Mode Presets|Default Mode Settings", typeof(String[]), this.modeSettingsVar.ToArray()));
             lstReturn.Add(new CPluginVariable("Map/Mode Presets|Overrides", typeof(String[]), this.overrideSettingsVar.ToArray()));
-            //lstReturn.Add(new CPluginVariable("Mode Descriptions|Enabled", typeof(bool), this.descsEnabled));
+            // Adding these later.
+            // lstReturn.Add(new CPluginVariable("Mode Descriptions|Descriptions Enabled", typeof(bool), this.descsEnabled));
+            // lstReturn.Add(new CPluginVariable("Mode Descriptions|Mode Descriptions", typeof(String[]), this.modeDescriptionsVar.ToArray()));
+
             return lstReturn;
         }
 
@@ -137,7 +148,6 @@ namespace PRoConEvents
                         {
                             applySettingsTimer.Enabled = false;
                         }
-                        this.sayConsole("Settings updated.");
                         return;
                     }
                 case "Default Mode Settings":
@@ -152,6 +162,8 @@ namespace PRoConEvents
                         {
                             GameSettings parsedGameSettings = new GameSettings();
                             String[] inputLineA = singleLine.Split(',');
+                            // Make the mode name lowercase. Capitalization errors can REALLY mess up your day.
+                            inputLineA[0] = inputLineA[0].ToLower();
                             // If parsing fails, or if the mode is already in the list, set success to false, and break the loop.
                             if (!parseGameSettingsString(inputLineA, 0, out parsedGameSettings) || tmodeSettings.ContainsKey(inputLineA[0]))
                             {
@@ -167,7 +179,6 @@ namespace PRoConEvents
                             this.sayConsole("Invalid Input.");
                             return;
                         }
-                        this.sayConsole("Settings updated.");
                         modeSettings = tmodeSettings;
                         modeSettingsVar = tmodeSettingsVar;
                         return;
@@ -184,6 +195,9 @@ namespace PRoConEvents
                         {
                             GameSettings parsedGameSettings = new GameSettings();
                             String[] inputLineA = singleLine.Split(',');
+                            // Lowercase BS again
+                            inputLineA[0] = inputLineA[0].ToLower();
+                            inputLineA[1] = inputLineA[1].ToLower();
                             // If parsing fails, or if the mode is already in the list, set success to false, and break the loop.
                             if (!parseGameSettingsString(inputLineA, 1, out parsedGameSettings) || (tOverrideSettings.ContainsKey(inputLineA[0]) && tOverrideSettings.ContainsKey(inputLineA[1])))
                             {
@@ -203,7 +217,6 @@ namespace PRoConEvents
                             this.sayConsole("Invalid Input.");
                             return;
                         }
-                        this.sayConsole("Settings updated.");
                         overrideSettings = tOverrideSettings;
                         overrideSettingsVar = tOverrideSettingsVar;
                         return;
@@ -234,30 +247,13 @@ namespace PRoConEvents
             {
                 return false;
             }
-            // Iterate through all of the custom commands and assign them to the object.
-            List<KeyValuePair<string, string>> tCustomCommands = new List<KeyValuePair<string, string>>();
-                for (int i = gameSettingsA.Length; i > offset + 4; i = i - 2)
-            {
-                int index = i - 1;
-                tCustomCommands.Add(new KeyValuePair<string, string>(gameSettingsA[i - 2], gameSettingsA[i - 1]));
-            }
-            userGameSettings.CustomCommands = tCustomCommands;
             return true;
         }
-
-        private void rconCommand(params String[] arguments)
-        {
-            string[] execArgs = { "procon.protected.send" };
-            this.ExecuteCommand(execArgs.Concat(arguments).ToArray());
-        }
-        private void sayConsole(String arguments)
-        {
-            this.ExecuteCommand("procon.protected.pluginconsole.write", arguments);
-        }
-        #region events
+        #endregion
+        #region Events
         public override void OnRoundOver(int winningTeamId)
         {
-            if (!m_isPluginEnabled || !presetsEnabled) return;
+            if (!isPluginEnabled || !presetsEnabled) return;
             // Refresh indices so that we know for sure what the next mode is.
             // Votemap likes to wait until the last minute to set the next map.
             refreshIndicesTimer = new System.Timers.Timer(1000);
@@ -276,8 +272,11 @@ namespace PRoConEvents
 
         public override void OnMaplistGetMapIndices(int mapIndex, int nextIndex)
         {
-            this.nextMap = currMapList[nextIndex].MapFileName;
-            this.nextMode = currMapList[nextIndex].Gamemode;
+            // Making these lowercase here is a lot less work than doing it in runCommands().
+            this.nextMapDisp = currMapList[nextIndex].MapFileName;
+            this.nextModeDisp = currMapList[nextIndex].Gamemode;
+            this.nextMap = nextMapDisp.ToLower(); 
+            this.nextMode = nextModeDisp.ToLower();
         }
         public override void OnLevelLoaded(String strMapFileName, String strMapMode, Int32 roundsPlayed, Int32 roundsTotal)
         {
@@ -285,35 +284,32 @@ namespace PRoConEvents
             this.currMode = strMapMode;
         }
         #endregion
+        #region Timers
         private void runCommands(Object source, System.Timers.ElapsedEventArgs e)
         {
             applySettingsTimer.Enabled = false;
-            // Reset Vehicle Spawn Delay
-            sayConsole($"Executing default commands for Mode {nextMode}.");
-            this.rconCommand("vars.vehicleSpawnDelay", "100");
-            this.rconCommand("vars.vehicleSpawnAllowed", modeSettings[nextMode].VehicleSpawns.ToString().ToLower());
-            this.rconCommand("vars.gamemodeCounter", modeSettings[nextMode].GameModeCounter.ToString());
-            this.rconCommand("vars.roundTimeLimit", modeSettings[nextMode].GameTimeLimit.ToString());
-            if (modeSettings[nextMode].CustomCommands != null)
+            try
             {
-                foreach (KeyValuePair<string, string> customCommand in modeSettings[nextMode].CustomCommands)
+                if (overrideSettings.ContainsKey(nextMode) && overrideSettings[nextMode].ContainsKey(nextMap))
                 {
-                    this.rconCommand(customCommand.Key, customCommand.Value);
+                    sayConsole($"Executing override commands for Mode {nextModeDisp}, Map {nextMapDisp}.");
+                    this.rconCommand("vars.vehicleSpawnAllowed", overrideSettings[nextMode][nextMap].VehicleSpawns.ToString().ToLower());
+                    this.rconCommand("vars.gamemodeCounter", overrideSettings[nextMode][nextMap].GameModeCounter.ToString());
+                    this.rconCommand("vars.roundTimeLimit", overrideSettings[nextMode][nextMap].GameTimeLimit.ToString());
                 }
-            }
-            if (overrideSettings.ContainsKey(nextMode) && overrideSettings[nextMode].ContainsKey(nextMap))
+                else
+                {
+                    // Reset Vehicle Spawn Delay
+                    sayConsole($"Executing default commands for Mode {nextModeDisp}.");
+                    this.rconCommand("vars.vehicleSpawnAllowed", modeSettings[nextMode].VehicleSpawns.ToString().ToLower());
+                    this.rconCommand("vars.gamemodeCounter", modeSettings[nextMode].GameModeCounter.ToString());
+                    this.rconCommand("vars.roundTimeLimit", modeSettings[nextMode].GameTimeLimit.ToString());
+                }
+                } catch (Exception error)
             {
-                sayConsole($"Executing overrides for Mode {nextMode}, Map {nextMap}.");
-                this.rconCommand("vars.vehicleSpawnAllowed", overrideSettings[nextMode][nextMap].VehicleSpawns.ToString().ToLower());
-                this.rconCommand("vars.gamemodeCounter", overrideSettings[nextMode][nextMap].GameModeCounter.ToString());
-                this.rconCommand("vars.roundTimeLimit", overrideSettings[nextMode][nextMap].GameTimeLimit.ToString());
-                if (overrideSettings[nextMode][nextMap].CustomCommands != null)
-                {
-                    foreach (KeyValuePair<string, string> customCommand in overrideSettings[nextMode][nextMap].CustomCommands)
-                    {
-                        this.rconCommand(customCommand.Key, customCommand.Value);
-                    }
-                }
+                sayConsole("Error running commands:");
+                sayConsole(error.GetType().Name);
+                sayConsole(error.Message);
             }
         }
         private void refreshIndices(Object source, System.Timers.ElapsedEventArgs e)
@@ -322,5 +318,17 @@ namespace PRoConEvents
             rconCommand("mapList.list");
             rconCommand("mapList.getMapIndices");
         }
+        #endregion
+        #region Helpers
+        private void rconCommand(params String[] arguments)
+        {
+            string[] execArgs = { "procon.protected.send" };
+            this.ExecuteCommand(execArgs.Concat(arguments).ToArray());
+        }
+        private void sayConsole(String arguments)
+        {
+            this.ExecuteCommand("procon.protected.pluginconsole.write", "[MapTools] " + arguments);
+        }
+        #endregion
     }
 }

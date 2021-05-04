@@ -44,7 +44,7 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
-    <Compile Include="CMapTools.cs" />
+    <Compile Include="MapTools.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
@@ -55,9 +55,9 @@
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <PropertyGroup>
-    <PreBuildEvent>del "D:\procon-test\Plugins\BF4\CMapTools.*"</PreBuildEvent>
+    <PreBuildEvent>del "D:\procon-test\Plugins\BF4\MapTools.*"</PreBuildEvent>
   </PropertyGroup>
   <PropertyGroup>
-    <PostBuildEvent>xcopy "C:\Users\ryder\Documents\GitHub\maptools\maptools\CMapTools.cs" "D:\procon-test\Plugins\BF4" /Y /E /I</PostBuildEvent>
+    <PostBuildEvent>xcopy "C:\Users\ryder\Documents\GitHub\maptools\maptools\MapTools.cs" "D:\procon-test\Plugins\BF4" /Y /E /I</PostBuildEvent>
   </PropertyGroup>
 </Project>
