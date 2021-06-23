@@ -66,12 +66,12 @@ namespace PRoConEvents
 
         public string GetPluginVersion()
         {
-            return "1.0";
+            return "1.0.0";
         }
 
         public string GetPluginAuthor()
         {
-            return "BadPylot";
+            return "BadPylot#0001";
         }
 
         public string GetPluginWebsite()
