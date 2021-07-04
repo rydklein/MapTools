@@ -7,6 +7,7 @@ using System.Data;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Timers;
+using System.Net;
 
 using PRoCon.Core;
 using PRoCon.Core.Plugin;
@@ -17,6 +18,7 @@ using PRoCon.Core.Battlemap;
 using PRoCon.Core.Maps;
 using PRoCon.Core.HttpServer;
 using System.Linq;
+using System.Collections;
 
 namespace PRoConEvents
 {
@@ -33,11 +35,10 @@ namespace PRoConEvents
         // Gamemode settings + descriptions
         private Dictionary<string, GameSettings> modeSettings = new Dictionary<string, GameSettings>();
         private Dictionary<string, Dictionary<string, GameSettings>> overrideSettings = new Dictionary<string, Dictionary<string, GameSettings>>();
-        private Dictionary<string, string> modeDescriptions = new Dictionary<string, string>();
+        // private Dictionary<string, string> modeDescriptions = new Dictionary<string, string>();
         // Timers
-        private static System.Timers.Timer applySettingsTimer;
-        private static System.Timers.Timer refreshIndicesTimer;
-        // private static System.Timers.Timer giveTutorialTimer;
+        private System.Timers.Timer applySettingsTimer;
+        private System.Timers.Timer refreshIndicesTimer;
         // Map Info
         private List<MaplistEntry> currMapList;
         private string currMap;
@@ -66,29 +67,33 @@ namespace PRoConEvents
 
         public string GetPluginVersion()
         {
-            return "1.0.0";
+            return "1.1.0";
         }
 
         public string GetPluginAuthor()
         {
-            return "BadPylot#0001";
+            return "BadPylot";
         }
 
         public string GetPluginWebsite()
         {
-            return "discord.gg/hh5RKFHBeZ";
+            return "https://github.com/BadPylot/MapTools";
         }
 
         public string GetPluginDescription()
         {
-            // I need to actually do this.
-            // I'm not actually gonna do this.
-            return @"";
+            return "See the <a href='https://github.com/BadPylot/MapTools'>MapTools Github Repository</a> for documentation.<br>Copy-Pastable Link:<br>https://github.com/BadPylot/MapTools";
         }
         #endregion
         #region Procon Events
         public void OnPluginLoaded(string strHostName, string strPort, string strPRoConVersion)
         {
+            string latestVersion = this.getLatestVersion();
+            if (!this.GetPluginVersion().Equals(latestVersion))
+            {
+                this.sayConsole($"A new version of MapTools is available on GitHub: v{latestVersion}.");
+                this.sayConsole($"Download the latest version of MapTools at https://github.com/BadPylot/MapTools/releases/tag/{latestVersion} for the latest features and bugfixes.");
+            }
             this.RegisterEvents(this.GetType().Name, "OnRoundOver", "OnMaplistGetMapIndices", "OnMaplistList", "OnLevelLoaded");
             rconCommand("mapList.list");
             rconCommand("mapList.getMapIndices");
@@ -96,14 +101,13 @@ namespace PRoConEvents
 
         public void OnPluginEnable()
         {
-            this.sayConsole("^bMapTools ^2Enabled!");
-
+            this.sayConsole("Plugin Enabled.");
             this.isPluginEnabled = true;
         }
 
         public void OnPluginDisable()
         {
-            this.sayConsole("^bMapTools ^1Disabled!");
+            this.sayConsole("Plugin Disabled.");
             applySettingsTimer.Enabled = false;
             this.isPluginEnabled = false;
         }
@@ -257,11 +261,11 @@ namespace PRoConEvents
             // Refresh indices so that we know for sure what the next mode is.
             // Votemap likes to wait until the last minute to set the next map.
             refreshIndicesTimer = new System.Timers.Timer(1000);
-            refreshIndicesTimer.Elapsed += refreshIndices;
+            refreshIndicesTimer.Elapsed += updateMapDataTimerWrapper;
             refreshIndicesTimer.Enabled = true;
             // Gives indices time to refresh before actually applying settings.
             applySettingsTimer = new System.Timers.Timer(3000);
-            applySettingsTimer.Elapsed += runCommands;
+            applySettingsTimer.Elapsed += runCommandsTimerWrapper;
             applySettingsTimer.Enabled = true;
         }
 
@@ -285,7 +289,18 @@ namespace PRoConEvents
         }
         #endregion
         #region Timers
-        private void runCommands(Object source, System.Timers.ElapsedEventArgs e)
+        private void runCommandsTimerWrapper(Object source, System.Timers.ElapsedEventArgs e)
+        {
+            runCommands();
+        }
+        private void updateMapDataTimerWrapper(Object source, System.Timers.ElapsedEventArgs e)
+        {
+            refreshIndicesTimer.Enabled = false;
+            updateMapData();
+        }
+        #endregion
+        #region Main Functions
+        private void runCommands()
         {
             applySettingsTimer.Enabled = false;
             try
@@ -305,18 +320,13 @@ namespace PRoConEvents
                     this.rconCommand("vars.gamemodeCounter", modeSettings[nextMode].GameModeCounter.ToString());
                     this.rconCommand("vars.roundTimeLimit", modeSettings[nextMode].GameTimeLimit.ToString());
                 }
-                } catch (Exception error)
+            }
+            catch (Exception error)
             {
                 sayConsole("Error running commands:");
                 sayConsole(error.GetType().Name);
                 sayConsole(error.Message);
             }
-        }
-        private void refreshIndices(Object source, System.Timers.ElapsedEventArgs e)
-        {
-            refreshIndicesTimer.Enabled = false;
-            rconCommand("mapList.list");
-            rconCommand("mapList.getMapIndices");
         }
         #endregion
         #region Helpers
@@ -325,9 +335,40 @@ namespace PRoConEvents
             string[] execArgs = { "procon.protected.send" };
             this.ExecuteCommand(execArgs.Concat(arguments).ToArray());
         }
+        private void updateMapData()
+        {
+            rconCommand("mapList.list");
+            rconCommand("mapList.getMapIndices");
+        }
         private void sayConsole(String arguments)
         {
             this.ExecuteCommand("procon.protected.pluginconsole.write", "[MapTools] " + arguments);
+        }
+        private string getLatestVersion()
+        {
+            using (WebClient client = new WebClient())
+            {
+                client.Headers.Add($"User-Agent: MapTools/{GetPluginVersion()}");
+                string requestURL = "https://api.github.com/repos/BadPylot/MapTools/releases";
+                Regex semverRegex = new Regex(@"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$");
+                try
+                {
+                    // Casting Hell
+                    Hashtable response = (Hashtable)((ArrayList)JSON.JsonDecode(client.DownloadString(requestURL)))[0];
+                    string currentVersion = (string)response["tag_name"];
+                    if (!semverRegex.IsMatch(currentVersion))
+                    {
+                        throw new Exception("Release Tag is not valid SemVer syntax.");
+                    }
+                    return currentVersion;
+                } 
+                catch (Exception e)
+                {
+                    sayConsole("Error fetching current version. Please manually check the plugin repository for updates.");
+                    sayConsole(e.Message);
+                    return this.GetPluginVersion();
+                }
+            }
         }
         #endregion
     }

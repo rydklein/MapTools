@@ -1,5 +1,10 @@
 # MapTools
-V1.0.0
+V1.1.0
+
+## **[Download](https://github.com/BadPylot/MapTools/releases)**
+Click the link above to see the available releases. It is recommended that you download the latest version. Legacy builds are available, but are not recommended for use.
+
+
 ## What is it?
 MapTools is a Procon plugin designed to simplify changing certain game parameters based on the next game mode, and optionally, next map. Gone are the days of needlessly complicated Insane Limits scripts, or ineffective ProconRulz rules. Simply drop the plugin on your server, define your Mode Settings and Mode/Map overrides, and let MapTools do the work for you.
 ## Why should I use it?
