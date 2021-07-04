@@ -54,12 +54,12 @@ namespace PRoConEvents
         private System.Timers.Timer refreshIndicesTimer;
         // Map Info
         private List<MaplistEntry> currMapList;
+        private bool isLastRound;
+        private bool roundEnded;
         private string currMap;
         private string currMode;
         private string nextMap;
         private string nextMode;
-        private string nextMapDisp;
-        private string nextModeDisp;
 
         private struct GameSettings
         {
@@ -108,8 +108,7 @@ namespace PRoConEvents
                 this.sayConsole($"Download the latest version of MapTools at https://github.com/BadPylot/MapTools/releases/tag/{latestVersion} for the latest features and bugfixes.");
             }
             this.RegisterEvents(this.GetType().Name, "OnRoundOver", "OnMaplistGetMapIndices", "OnMaplistList", "OnLevelLoaded");
-            rconCommand("mapList.list");
-            rconCommand("mapList.getMapIndices");
+            this.updateMapData();
         }
 
         public void OnPluginEnable()
@@ -277,7 +276,8 @@ namespace PRoConEvents
         #region Events
         public override void OnRoundOver(int winningTeamId)
         {
-            if (!isPluginEnabled || !presetsEnabled) return;
+            this.roundEnded = true;
+            if (!isPluginEnabled || !presetsEnabled || !this.isLastRound) return;
             // Refresh indices so that we know for sure what the next mode is.
             // Votemap likes to wait until the last minute to set the next map.
             refreshIndicesTimer = new System.Timers.Timer(1000);
@@ -297,21 +297,31 @@ namespace PRoConEvents
         public override void OnMaplistGetMapIndices(int mapIndex, int nextIndex)
         {
             // Making these lowercase here is a lot less work than doing it in runCommands().
-            this.nextMapDisp = currMapList[nextIndex].MapFileName;
-            this.nextModeDisp = currMapList[nextIndex].Gamemode;
-            this.nextMap = nextMapDisp.ToLower(); 
-            this.nextMode = nextModeDisp.ToLower();
+            this.nextMap = currMapList[nextIndex].MapFileName;
+            this.nextMode = currMapList[nextIndex].Gamemode;
+
         }
         public override void OnLevelLoaded(String strMapFileName, String strMapMode, Int32 roundsPlayed, Int32 roundsTotal)
         {
+            this.isLastRound = (roundsPlayed + 1 == roundsTotal || roundsTotal == 0);
+            string lastMap = this.currMap;
+            string lastMode = this.currMode;
             this.currMap = strMapFileName;
             this.currMode = strMapMode;
+            if ((!((lastMap == this.currMap) && (lastMode == this.currMode))) && !this.roundEnded && isPluginEnabled && presetsEnabled)
+            {
+                sayConsole("Manual map change detected. Running commands and restarting round.");
+                runCommands(this.currMap, this.currMode);
+                rconCommand("mapList.restartRound");
+            }
+            this.roundEnded = false;
         }
         #endregion
         #region Timers
         private void runCommandsTimerWrapper(Object source, System.Timers.ElapsedEventArgs e)
         {
-            runCommands();
+            applySettingsTimer.Enabled = false;
+            runCommands(this.nextMap, this.nextMode);
         }
         private void updateMapDataTimerWrapper(Object source, System.Timers.ElapsedEventArgs e)
         {
@@ -320,30 +330,35 @@ namespace PRoConEvents
         }
         #endregion
         #region Main Functions
-        private void runCommands()
+        private void runCommands(string cmdMap, string cmdMode)
         {
-            applySettingsTimer.Enabled = false;
+            string cmdMapLower = cmdMap.ToLower();
+            string cmdModeLower = cmdMode.ToLower();
+            if ((cmdMap == null) || (cmdMode == null))
+            {
+                sayConsole("Current Map/Mode not found.");
+                return;
+            }
             try
             {
-                if (overrideSettings.ContainsKey(nextMode) && overrideSettings[nextMode].ContainsKey(nextMap))
+                if (overrideSettings.ContainsKey(cmdModeLower) && overrideSettings[cmdModeLower].ContainsKey(cmdMapLower))
                 {
-                    sayConsole($"Executing override commands for Mode {nextModeDisp}, Map {nextMapDisp}.");
-                    this.rconCommand("vars.vehicleSpawnAllowed", overrideSettings[nextMode][nextMap].VehicleSpawns.ToString().ToLower());
-                    this.rconCommand("vars.gamemodeCounter", overrideSettings[nextMode][nextMap].GameModeCounter.ToString());
-                    this.rconCommand("vars.roundTimeLimit", overrideSettings[nextMode][nextMap].GameTimeLimit.ToString());
+                    sayConsole($"Executing override commands for Mode {cmdMode}, Map {cmdMap}.");
+                    this.rconCommand("vars.vehicleSpawnAllowed", overrideSettings[cmdModeLower][cmdMapLower].VehicleSpawns.ToString().ToLower());
+                    this.rconCommand("vars.gamemodeCounter", overrideSettings[cmdModeLower][cmdMapLower].GameModeCounter.ToString());
+                    this.rconCommand("vars.roundTimeLimit", overrideSettings[cmdModeLower][cmdMapLower].GameTimeLimit.ToString());
                 }
                 else
                 {
-                    // Reset Vehicle Spawn Delay
-                    sayConsole($"Executing default commands for Mode {nextModeDisp}.");
-                    this.rconCommand("vars.vehicleSpawnAllowed", modeSettings[nextMode].VehicleSpawns.ToString().ToLower());
-                    this.rconCommand("vars.gamemodeCounter", modeSettings[nextMode].GameModeCounter.ToString());
-                    this.rconCommand("vars.roundTimeLimit", modeSettings[nextMode].GameTimeLimit.ToString());
+                    sayConsole($"Executing default commands for Mode {cmdMode}.");
+                    this.rconCommand("vars.vehicleSpawnAllowed", modeSettings[cmdModeLower].VehicleSpawns.ToString().ToLower());
+                    this.rconCommand("vars.gamemodeCounter", modeSettings[cmdModeLower].GameModeCounter.ToString());
+                    this.rconCommand("vars.roundTimeLimit", modeSettings[cmdModeLower].GameTimeLimit.ToString());
                 }
             }
             catch (Exception error)
             {
-                sayConsole($"Default commands not found for mode {nextModeDisp}. Settings will not be changed!");
+                sayConsole($"Default commands not found for mode {cmdMode}. Settings will not be changed!");
                 sayConsole(error.GetType().Name);
                 sayConsole(error.Message);
             }
@@ -381,7 +396,7 @@ namespace PRoConEvents
                         throw new Exception("Release Tag is not valid SemVer syntax.");
                     }
                     return currentVersion;
-                } 
+                }
                 catch (Exception e)
                 {
                     sayConsole("Error fetching current version. Please manually check the plugin repository for updates.");
