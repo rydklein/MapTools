@@ -24,7 +24,6 @@ namespace PRoConEvents
 {
     public class MapTools : PRoConPluginAPI, IPRoConPluginInterface
     {
-
         // Procon Variables
         bool isPluginEnabled;
         private List<string> modeSettingsVar = new List<string>()
@@ -42,16 +41,16 @@ namespace PRoConEvents
             "RushLarge0,MP_Siege,false,100,100",
             "ConquestLarge0,MP_Flooded,false,100,100",
         };
-        private List<string> modeDescriptionsVar = new List<string>();
-        private bool presetsEnabled;
-        // private bool descsEnabled;
-        // Gamemode settings + descriptions
+        private bool presetsEnabled = false;
+        private bool fastForwardEnable = false;
+        private int fastForwardDelay = 15;
+        // Gamemode settings
         private Dictionary<string, GameSettings> modeSettings = new Dictionary<string, GameSettings>();
         private Dictionary<string, Dictionary<string, GameSettings>> overrideSettings = new Dictionary<string, Dictionary<string, GameSettings>>();
-        // private Dictionary<string, string> modeDescriptions = new Dictionary<string, string>();
         // Timers
         private System.Timers.Timer applySettingsTimer;
         private System.Timers.Timer refreshIndicesTimer;
+        private System.Timers.Timer fastFowardTimer;
         // Map Info
         private List<MaplistEntry> currMapList;
         private bool isLastRound;
@@ -101,40 +100,39 @@ namespace PRoConEvents
         #region Procon Events
         public void OnPluginLoaded(string strHostName, string strPort, string strPRoConVersion)
         {
-            string latestVersion = this.getLatestVersion();
-            if (!this.GetPluginVersion().Equals(latestVersion))
+            string latestVersion = getLatestVersion();
+            if (!GetPluginVersion().Equals(latestVersion))
             {
-                this.sayConsole($"A new version of MapTools is available on GitHub: v{latestVersion}.");
-                this.sayConsole($"Download the latest version of MapTools at https://github.com/BadPylot/MapTools/releases/tag/{latestVersion} for the latest features and bugfixes.");
+                sayConsole($"A new version of MapTools is available on GitHub: v{latestVersion}.");
+                sayConsole($"Download the latest version of MapTools at https://github.com/BadPylot/MapTools/releases/tag/{latestVersion} for the latest features and bugfixes.");
             }
-            this.RegisterEvents(this.GetType().Name, "OnRoundOver", "OnMaplistGetMapIndices", "OnMaplistList", "OnLevelLoaded");
-            this.updateMapData();
+            RegisterEvents(GetType().Name, "OnRoundOver", "OnMaplistGetMapIndices", "OnMaplistList", "OnLevelLoaded");
+            updateMapData();
         }
 
         public void OnPluginEnable()
         {
-            this.sayConsole("Plugin Enabled.");
-            this.isPluginEnabled = true;
+            sayConsole("Plugin Enabled.");
+            isPluginEnabled = true;
         }
 
         public void OnPluginDisable()
         {
-            this.sayConsole("Plugin Disabled.");
+            sayConsole("Plugin Disabled.");
             applySettingsTimer.Enabled = false;
-            this.isPluginEnabled = false;
+            fastFowardTimer.Enabled = false;
+            isPluginEnabled = false;
         }
         #endregion
         #region Variables
         public List<CPluginVariable> GetDisplayPluginVariables()
         {
             List<CPluginVariable> lstReturn = new List<CPluginVariable>();
-            lstReturn.Add(new CPluginVariable("Map/Mode Presets|Presets Enabled", typeof(bool), this.presetsEnabled));
-            lstReturn.Add(new CPluginVariable("Map/Mode Presets|Default Mode Settings", typeof(String[]), this.modeSettingsVar.ToArray()));
-            lstReturn.Add(new CPluginVariable("Map/Mode Presets|Map Overrides", typeof(String[]), this.overrideSettingsVar.ToArray()));
-            // Adding these later.
-            // lstReturn.Add(new CPluginVariable("Mode Descriptions|Descriptions Enabled", typeof(bool), this.descsEnabled));
-            // lstReturn.Add(new CPluginVariable("Mode Descriptions|Mode Descriptions", typeof(String[]), this.modeDescriptionsVar.ToArray()));
-
+            lstReturn.Add(new CPluginVariable("Map/Mode Presets|Presets Enabled", typeof(bool), presetsEnabled));
+            lstReturn.Add(new CPluginVariable("Map/Mode Presets|Default Mode Settings", typeof(String[]), modeSettingsVar.ToArray()));
+            lstReturn.Add(new CPluginVariable("Map/Mode Presets|Map Overrides", typeof(String[]), overrideSettingsVar.ToArray()));
+            lstReturn.Add(new CPluginVariable("Fast Forward|Fast Forward Enabled", typeof(bool), fastForwardEnable));
+            lstReturn.Add(new CPluginVariable("Fast Forward|Fast Forward Delay", typeof(int), fastForwardDelay));
             return lstReturn;
         }
 
@@ -191,7 +189,7 @@ namespace PRoConEvents
                         }
                         if (!success)
                         {
-                            this.sayConsole("Default Mode Settings: Invalid Input.");
+                            sayConsole("Default Mode Settings: Invalid Input.");
                             return;
                         }
                         modeSettings = tmodeSettings;
@@ -236,12 +234,31 @@ namespace PRoConEvents
                             }
                             if (!success)
                             {
-                                this.sayConsole("Map Overrides: Invalid Input.");
+                                sayConsole("Map Overrides: Invalid Input.");
                                 return;
                             }
                         }
                         overrideSettings = tOverrideSettings;
                         overrideSettingsVar = tOverrideSettingsVar;
+                        return;
+                    }
+                case "Fast Forward Enabled":
+                    {
+                        fastForwardEnable = Boolean.Parse(CPluginVariable.Decode(strValue));
+                        return;
+                    }
+                case "Fast Forward Delay":
+                    {
+                        int tempFFDelay = 0;
+                        bool success = true;
+                        if (!int.TryParse(CPluginVariable.Decode(strValue), out tempFFDelay)) success = false;
+                        if (!((14 < tempFFDelay) && (tempFFDelay < 60))) success = false;
+                        if (!success)
+                        {
+                            sayConsole("Fast Forward Delay: Invalid Input. Delay must be an integer between 15 and 60.");
+                            return;
+                        }
+                        fastForwardDelay = tempFFDelay;
                         return;
                     }
             }
@@ -276,57 +293,80 @@ namespace PRoConEvents
         #region Events
         public override void OnRoundOver(int winningTeamId)
         {
-            this.roundEnded = true;
-            if (!isPluginEnabled || !presetsEnabled || !this.isLastRound) return;
-            // Refresh indices so that we know for sure what the next mode is.
-            // Votemap likes to wait until the last minute to set the next map.
-            refreshIndicesTimer = new System.Timers.Timer(1000);
-            refreshIndicesTimer.Elapsed += updateMapDataTimerWrapper;
-            refreshIndicesTimer.Enabled = true;
-            // Gives indices time to refresh before actually applying settings.
-            applySettingsTimer = new System.Timers.Timer(3000);
-            applySettingsTimer.Elapsed += runCommandsTimerWrapper;
-            applySettingsTimer.Enabled = true;
+            try
+            {
+                roundEnded = true;
+                if (!isPluginEnabled) return;
+                int secondsToRestart = 60;
+                if (fastForwardEnable)
+                {
+                    secondsToRestart = fastForwardDelay + 1;
+                    fastFowardTimer = new System.Timers.Timer(secondsToRestart * 1000);
+                    fastFowardTimer.Elapsed += skipRoundTimerWrapper;
+                    fastFowardTimer.Enabled = true;
+                }
+                if (!presetsEnabled || !isLastRound) return;
+                // Refresh indices so that we know for sure what the next mode is.
+                // Votemap likes to wait until the last minute to set the next map.
+                refreshIndicesTimer = new System.Timers.Timer((secondsToRestart - 6) * 1000);
+                refreshIndicesTimer.Elapsed += updateMapDataTimerWrapper;
+                refreshIndicesTimer.Enabled = true;
+                // Gives indices time to refresh before actually applying settings.
+                applySettingsTimer = new System.Timers.Timer((secondsToRestart - 3) * 1000);
+                applySettingsTimer.Elapsed += runCommandsTimerWrapper;
+                applySettingsTimer.Enabled = true;
+            } 
+            catch (Exception e)
+            {
+                sayConsole(e.GetType().ToString());
+                sayConsole(e.Message);
+                sayConsole(e.StackTrace);
+            }
         }
 
         public override void OnMaplistList(List<MaplistEntry> lstMaplist)
         {
-            this.currMapList = new List<MaplistEntry>(lstMaplist);
+            currMapList = new List<MaplistEntry>(lstMaplist);
         }
 
         public override void OnMaplistGetMapIndices(int mapIndex, int nextIndex)
         {
-            // Making these lowercase here is a lot less work than doing it in runCommands().
-            this.nextMap = currMapList[nextIndex].MapFileName;
-            this.nextMode = currMapList[nextIndex].Gamemode;
+            nextMap = currMapList[nextIndex].MapFileName;
+            nextMode = currMapList[nextIndex].Gamemode;
 
         }
         public override void OnLevelLoaded(String strMapFileName, String strMapMode, Int32 roundsPlayed, Int32 roundsTotal)
         {
-            this.isLastRound = (roundsPlayed + 1 == roundsTotal || roundsTotal == 0);
-            string lastMap = this.currMap;
-            string lastMode = this.currMode;
-            this.currMap = strMapFileName;
-            this.currMode = strMapMode;
-            if ((!((lastMap == this.currMap) && (lastMode == this.currMode))) && !this.roundEnded && isPluginEnabled && presetsEnabled)
+            isLastRound = (roundsPlayed + 1 == roundsTotal || roundsTotal == 0);
+            string lastMap = currMap;
+            string lastMode = currMode;
+            currMap = strMapFileName;
+            currMode = strMapMode;
+            if ((!((lastMap == currMap) && (lastMode == currMode))) && !roundEnded && isPluginEnabled && presetsEnabled)
             {
                 sayConsole("Manual map change detected. Running commands and restarting round.");
-                runCommands(this.currMap, this.currMode);
+                runCommands(currMap, currMode);
                 rconCommand("mapList.restartRound");
             }
-            this.roundEnded = false;
+            roundEnded = false;
         }
         #endregion
         #region Timers
         private void runCommandsTimerWrapper(Object source, System.Timers.ElapsedEventArgs e)
         {
             applySettingsTimer.Enabled = false;
-            runCommands(this.nextMap, this.nextMode);
+            runCommands(nextMap, nextMode);
         }
         private void updateMapDataTimerWrapper(Object source, System.Timers.ElapsedEventArgs e)
         {
             refreshIndicesTimer.Enabled = false;
             updateMapData();
+        }
+        private void skipRoundTimerWrapper(Object source, System.Timers.ElapsedEventArgs e)
+        {
+            fastFowardTimer.Enabled = false;
+            sayConsole("Running Next Round...");
+            rconCommand("mapList.runNextRound");
         }
         #endregion
         #region Main Functions
@@ -344,16 +384,16 @@ namespace PRoConEvents
                 if (overrideSettings.ContainsKey(cmdModeLower) && overrideSettings[cmdModeLower].ContainsKey(cmdMapLower))
                 {
                     sayConsole($"Executing override commands for Mode {cmdMode}, Map {cmdMap}.");
-                    this.rconCommand("vars.vehicleSpawnAllowed", overrideSettings[cmdModeLower][cmdMapLower].VehicleSpawns.ToString().ToLower());
-                    this.rconCommand("vars.gamemodeCounter", overrideSettings[cmdModeLower][cmdMapLower].GameModeCounter.ToString());
-                    this.rconCommand("vars.roundTimeLimit", overrideSettings[cmdModeLower][cmdMapLower].GameTimeLimit.ToString());
+                    rconCommand("vars.vehicleSpawnAllowed", overrideSettings[cmdModeLower][cmdMapLower].VehicleSpawns.ToString().ToLower());
+                    rconCommand("vars.gamemodeCounter", overrideSettings[cmdModeLower][cmdMapLower].GameModeCounter.ToString());
+                    rconCommand("vars.roundTimeLimit", overrideSettings[cmdModeLower][cmdMapLower].GameTimeLimit.ToString());
                 }
                 else
                 {
                     sayConsole($"Executing default commands for Mode {cmdMode}.");
-                    this.rconCommand("vars.vehicleSpawnAllowed", modeSettings[cmdModeLower].VehicleSpawns.ToString().ToLower());
-                    this.rconCommand("vars.gamemodeCounter", modeSettings[cmdModeLower].GameModeCounter.ToString());
-                    this.rconCommand("vars.roundTimeLimit", modeSettings[cmdModeLower].GameTimeLimit.ToString());
+                    rconCommand("vars.vehicleSpawnAllowed", modeSettings[cmdModeLower].VehicleSpawns.ToString().ToLower());
+                    rconCommand("vars.gamemodeCounter", modeSettings[cmdModeLower].GameModeCounter.ToString());
+                    rconCommand("vars.roundTimeLimit", modeSettings[cmdModeLower].GameTimeLimit.ToString());
                 }
             }
             catch (Exception error)
@@ -368,7 +408,7 @@ namespace PRoConEvents
         private void rconCommand(params String[] arguments)
         {
             string[] execArgs = { "procon.protected.send" };
-            this.ExecuteCommand(execArgs.Concat(arguments).ToArray());
+            ExecuteCommand(execArgs.Concat(arguments).ToArray());
         }
         private void updateMapData()
         {
@@ -377,7 +417,7 @@ namespace PRoConEvents
         }
         private void sayConsole(String arguments)
         {
-            this.ExecuteCommand("procon.protected.pluginconsole.write", "[MapTools] " + arguments);
+            ExecuteCommand("procon.protected.pluginconsole.write", "[MapTools] " + arguments);
         }
         private string getLatestVersion()
         {
@@ -399,9 +439,9 @@ namespace PRoConEvents
                 }
                 catch (Exception e)
                 {
-                    sayConsole("Error fetching current version. Please manually check the plugin repository for updates.");
+                    sayConsole("Error fetching latest version. Please manually check the plugin repository for updates.");
                     sayConsole(e.Message);
-                    return this.GetPluginVersion();
+                    return GetPluginVersion();
                 }
             }
         }
