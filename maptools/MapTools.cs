@@ -44,6 +44,8 @@ namespace PRoConEvents
         private bool presetsEnabled = false;
         private bool fastForwardEnable = false;
         private int fastForwardDelay = 15;
+        // Update Notifier
+        public string latestVersion;
         // Gamemode settings
         private Dictionary<string, GameSettings> modeSettings = new Dictionary<string, GameSettings>();
         private Dictionary<string, Dictionary<string, GameSettings>> overrideSettings = new Dictionary<string, Dictionary<string, GameSettings>>();
@@ -100,7 +102,7 @@ namespace PRoConEvents
         #region Procon Events
         public void OnPluginLoaded(string strHostName, string strPort, string strPRoConVersion)
         {
-            string latestVersion = getLatestVersion();
+            latestVersion = getLatestVersion();
             if (!GetPluginVersion().Equals(latestVersion))
             {
                 sayConsole($"A new version of MapTools is available on GitHub: v{latestVersion}.");
@@ -293,9 +295,12 @@ namespace PRoConEvents
         #region Events
         public override void OnRoundOver(int winningTeamId)
         {
-            try
+            if (!GetPluginVersion().Equals(latestVersion))
             {
-                roundEnded = true;
+                sayConsole($"A new version of MapTools is available on GitHub: v{latestVersion}.");
+                sayConsole($"Download the latest version of MapTools at https://github.com/BadPylot/MapTools/releases/tag/{latestVersion} for the latest features and bugfixes.");
+            }
+            roundEnded = true;
                 if (!isPluginEnabled) return;
                 int secondsToRestart = 60;
                 if (fastForwardEnable)
@@ -315,13 +320,6 @@ namespace PRoConEvents
                 applySettingsTimer = new System.Timers.Timer((secondsToRestart - 3) * 1000);
                 applySettingsTimer.Elapsed += runCommandsTimerWrapper;
                 applySettingsTimer.Enabled = true;
-            } 
-            catch (Exception e)
-            {
-                sayConsole(e.GetType().ToString());
-                sayConsole(e.Message);
-                sayConsole(e.StackTrace);
-            }
         }
 
         public override void OnMaplistList(List<MaplistEntry> lstMaplist)
