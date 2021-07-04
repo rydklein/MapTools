@@ -27,8 +27,21 @@ namespace PRoConEvents
 
         // Procon Variables
         bool isPluginEnabled;
-        private List<string> modeSettingsVar = new List<string>();
-        private List<string> overrideSettingsVar = new List<string>();
+        private List<string> modeSettingsVar = new List<string>()
+        {
+            "ConquestLarge0,true,100,100",
+            "ConquestSmall0,true,100,100",
+            "CarrierAssaultLarge0,true,100,100",
+            "RushLarge0,true,100,100",
+            "Obliteration,true,100,100",
+            "CaptureTheFlag0,true,100,100",
+            "Chainlink0,true,100,100",
+        };
+        private List<string> overrideSettingsVar = new List<string>()
+        {
+            "RushLarge0,MP_Siege,false,100,100",
+            "ConquestLarge0,MP_Flooded,false,100,100",
+        };
         private List<string> modeDescriptionsVar = new List<string>();
         private bool presetsEnabled;
         // private bool descsEnabled;
@@ -118,7 +131,7 @@ namespace PRoConEvents
             List<CPluginVariable> lstReturn = new List<CPluginVariable>();
             lstReturn.Add(new CPluginVariable("Map/Mode Presets|Presets Enabled", typeof(bool), this.presetsEnabled));
             lstReturn.Add(new CPluginVariable("Map/Mode Presets|Default Mode Settings", typeof(String[]), this.modeSettingsVar.ToArray()));
-            lstReturn.Add(new CPluginVariable("Map/Mode Presets|Overrides", typeof(String[]), this.overrideSettingsVar.ToArray()));
+            lstReturn.Add(new CPluginVariable("Map/Mode Presets|Map Overrides", typeof(String[]), this.overrideSettingsVar.ToArray()));
             // Adding these later.
             // lstReturn.Add(new CPluginVariable("Mode Descriptions|Descriptions Enabled", typeof(bool), this.descsEnabled));
             // lstReturn.Add(new CPluginVariable("Mode Descriptions|Mode Descriptions", typeof(String[]), this.modeDescriptionsVar.ToArray()));
@@ -144,7 +157,6 @@ namespace PRoConEvents
                         bool tPresetsEnabled;
                         if (!Boolean.TryParse(strValue, out tPresetsEnabled))
                         {
-                            this.sayConsole("Invalid Input.");
                             return;
                         }
                         presetsEnabled = tPresetsEnabled;
@@ -180,14 +192,14 @@ namespace PRoConEvents
                         }
                         if (!success)
                         {
-                            this.sayConsole("Invalid Input.");
+                            this.sayConsole("Default Mode Settings: Invalid Input.");
                             return;
                         }
                         modeSettings = tmodeSettings;
                         modeSettingsVar = tmodeSettingsVar;
                         return;
                     }
-                case "Overrides":
+                case "Map Overrides":
                     {
                         // Make a temporary, empty list to modify
                         Dictionary<string, Dictionary<string, GameSettings>> tOverrideSettings = new Dictionary<string, Dictionary<string, GameSettings>>();
@@ -195,31 +207,39 @@ namespace PRoConEvents
                         bool success = true;
                         // Decode the String input into a list.
                         List<string> tOverrideSettingsVar = new List<string>(CPluginVariable.DecodeStringArray(strValue));
-                        foreach (string singleLine in tOverrideSettingsVar)
+                        if (tOverrideSettingsVar[0] != "")
                         {
-                            GameSettings parsedGameSettings = new GameSettings();
-                            String[] inputLineA = singleLine.Split(',');
-                            // Lowercase BS again
-                            inputLineA[0] = inputLineA[0].ToLower();
-                            inputLineA[1] = inputLineA[1].ToLower();
-                            // If parsing fails, or if the mode is already in the list, set success to false, and break the loop.
-                            if (!parseGameSettingsString(inputLineA, 1, out parsedGameSettings) || (tOverrideSettings.ContainsKey(inputLineA[0]) && tOverrideSettings.ContainsKey(inputLineA[1])))
+                            foreach (string singleLine in tOverrideSettingsVar)
                             {
-                                success = false;
-                                break;
+                                GameSettings parsedGameSettings = new GameSettings();
+                                String[] inputLineA = singleLine.Split(',');
+                                if (inputLineA.Length < 4)
+                                {
+                                    success = false;
+                                    break;
+                                }
+                                // Lowercase BS again
+                                inputLineA[0] = inputLineA[0].ToLower();
+                                inputLineA[1] = inputLineA[1].ToLower();
+                                // If parsing fails, or if the mode is already in the list, set success to false, and break the loop.
+                                if (!parseGameSettingsString(inputLineA, 1, out parsedGameSettings) || (tOverrideSettings.ContainsKey(inputLineA[0]) && tOverrideSettings.ContainsKey(inputLineA[1])))
+                                {
+                                    success = false;
+                                    break;
+                                }
+                                // Add the parsed game settings to the dictionary of modes + settings, with the key being the mode name
+                                // And the value being the game settings.
+                                if (!tOverrideSettings.ContainsKey(inputLineA[0]))
+                                {
+                                    tOverrideSettings.Add(inputLineA[0], new Dictionary<string, GameSettings>());
+                                }
+                                tOverrideSettings[inputLineA[0]].Add(inputLineA[1], parsedGameSettings);
                             }
-                            // Add the parsed game settings to the dictionary of modes + settings, with the key being the mode name
-                            // And the value being the game settings.
-                            if (!tOverrideSettings.ContainsKey(inputLineA[0]))
+                            if (!success)
                             {
-                                tOverrideSettings.Add(inputLineA[0], new Dictionary<string, GameSettings>());
+                                this.sayConsole("Map Overrides: Invalid Input.");
+                                return;
                             }
-                            tOverrideSettings[inputLineA[0]].Add(inputLineA[1], parsedGameSettings);
-                        }
-                        if (!success)
-                        {
-                            this.sayConsole("Invalid Input.");
-                            return;
                         }
                         overrideSettings = tOverrideSettings;
                         overrideSettingsVar = tOverrideSettingsVar;
@@ -323,7 +343,7 @@ namespace PRoConEvents
             }
             catch (Exception error)
             {
-                sayConsole("Error running commands:");
+                sayConsole($"Default commands not found for mode {nextModeDisp}. Settings will not be changed!");
                 sayConsole(error.GetType().Name);
                 sayConsole(error.Message);
             }
