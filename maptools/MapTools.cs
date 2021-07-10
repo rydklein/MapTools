@@ -313,11 +313,11 @@ namespace PRoConEvents
                 if (!presetsEnabled || !isLastRound) return;
                 // Refresh indices so that we know for sure what the next mode is.
                 // Votemap likes to wait until the last minute to set the next map.
-                refreshIndicesTimer = new System.Timers.Timer((secondsToRestart - 6) * 1000);
+                refreshIndicesTimer = new System.Timers.Timer((secondsToRestart - 13) * 1000);
                 refreshIndicesTimer.Elapsed += updateMapDataTimerWrapper;
                 refreshIndicesTimer.Enabled = true;
                 // Gives indices time to refresh before actually applying settings.
-                applySettingsTimer = new System.Timers.Timer((secondsToRestart - 3) * 1000);
+                applySettingsTimer = new System.Timers.Timer((secondsToRestart - 10) * 1000);
                 applySettingsTimer.Elapsed += runCommandsTimerWrapper;
                 applySettingsTimer.Enabled = true;
         }
